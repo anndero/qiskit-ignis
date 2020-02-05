@@ -4,7 +4,7 @@ Bell nonlocality test
 test result = True means that nonlocality was detected - possible only for some entangled quantum states
 test result = False means that correlations can be reproduced within LHV model
 """
-from qiskit import *
+
 import cplex
 import numpy as np
 import itertools as it

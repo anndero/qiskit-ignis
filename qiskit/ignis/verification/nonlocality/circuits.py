@@ -40,7 +40,7 @@ def state_circ(state = None, n = None ):
             state.cx(range(n-1), range(1,n))
             
         elif state.lower()[0:5] == 'dicke':
-            try: excitations = int(name[5:])
+            try: excitations = int(state[5:])
             except ValueError: return
             statevector = [1.0/sqrt(n) if bin(i).count('1') == excitations else 0.0 for i in range(2**n)]
             state = qiskit.QuantumCircuit(n, n, name='w')
@@ -106,7 +106,7 @@ def meas_circs(sett = None, unitary_seq = None):
             if isinstance(gate,qiskit.circuit.Gate):
                 circ.append(gate, [i])
             else:
-                circ.unitary(gate, [i]) 
+                circ.u3(gate, [i]) 
         circ.measure(range(n),range(n))
         circs_list.append(circ)
     
