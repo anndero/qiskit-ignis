@@ -8,7 +8,7 @@ from cmath import exp
 import logging
 
 
-def state_circ(state=None, n=None):
+def state_circ(state = None, n = None):
     """ part of a circuit corresponding to the initial quantum state 
     Args: 
         state: i.e. QuantumCircuit, statevector or state name (e.g. 'ghz','w','dicke2')
@@ -16,44 +16,38 @@ def state_circ(state=None, n=None):
         n(int): number of qubits 
     Returns:
         state: QuantumCircuit object preparing the state 
-        statevector: vector of state' amplitudes 
+        statevector: np.array of state' amplitudes 
     """
 
     # 1. state passed as a circuit
     if isinstance(state, qiskit.QuantumCircuit):
-        job = qiskit.execute(
-            state, qiskit.BasicAer.get_backend('statevector_simulator'))
+        job = qiskit.execute(state, qiskit.BasicAer.get_backend('statevector_simulator'))
         statevector = job.result().get_statevector()
 
     # 2. random state
-    elif state == None and n != None:
-        statevector = qiskit.quantum_info.random.utils.random_state(2**n)
+    elif state is None and n is not None:
         state = qiskit.QuantumCircuit(n, n, name="random_state")
-        state.initialize(statevector, range(n))
+        state.initialize(qiskit.quantum_info.random.utils.random_state(2**n), range(n))
+        job = qiskit.execute(state, qiskit.BasicAer.get_backend('statevector_simulator'))
+        statevector = job.result().get_statevector()
 
     # 3. state passed by name e.g. ghz, w, dicke3
-    elif isinstance(state, str) and n != None:
-
+    elif isinstance(state, str) and n is not None:
         if state.lower() == 'ghz':
             statevector = np.array(([1/sqrt(2)]+[0]*(2**n-2))+[1/sqrt(2)])
             state = qiskit.QuantumCircuit(n, n, name='ghz')
             state.h(0)
             state.cx(range(n-1), range(1, n))
-
         elif state.lower()[0:5] == 'dicke':
             try: excitations = int(state[5:])
             except ValueError: return
-            statevector = [1.0/sqrt(n) if bin(i).count('1') == excitations else 0.0 for i in range(2**n)]
-
-            state = qiskit.QuantumCircuit(n, n, name='w')
+            statevector = [1.0 if bin(i).count('1') == excitations else 0.0 for i in range(2**n)]
+            statevector = np.array(statevector)/sqrt(sum(statevector))
+            state = qiskit.QuantumCircuit(n, n, name='dicke{}'.format(excitations))
             state.initialize(statevector, range(n))
-
         elif state.lower() == 'w':
-            statevector = [1.0 if bin(i).count(
-                '1') == 1 else 0.0 for i in range(2**n)]
-            statevector = statevector/sqrt(sum(statevector))
-            state = qiskit.QuantumCircuit(
-                n, n, name='dicke{}'.format(excitations))
+            statevector = [1.0/sqrt(n) if bin(i).count('1') == 1 else 0.0 for i in range(2**n)]
+            state = qiskit.QuantumCircuit(n, n, name='w')
             state.initialize(statevector, range(n))
         else:
             logging.error(' name of state not recognized')
@@ -61,12 +55,15 @@ def state_circ(state=None, n=None):
 
     # 4. state passed as statevector
     elif hasattr(state, '__iter__'):
-        if n == None:
+        if n is None:
             n = int(log(len(state), 2))
         if np.array(state).shape == (2**n,) and np.isclose(sum(np.conj(i)*i for i in state), 1.0):
             statevector = state.copy()
             state = qiskit.QuantumCircuit(n, n, name="state_circ")
             state.initialize(statevector, range(n))
+            # because the fidelity of initialized state can be poor replace with actual statevector
+            job = qiskit.execute(state, qiskit.BasicAer.get_backend('statevector_simulator'))
+            statevector = job.result().get_statevector()
         else:
             logging.error(' statevector is not properly normalized')
             return
@@ -77,7 +74,7 @@ def state_circ(state=None, n=None):
     return state, statevector
 
 
-def meas_circs(sett=None, unitary_seq=None):
+def meas_circs(sett = None, unitary_seq = None):
     """ list of circuits corresponding to measurements
     Args: 
         sett: measurement settings scenario i.e. number of choices of observables for each qubit
@@ -85,21 +82,27 @@ def meas_circs(sett=None, unitary_seq=None):
                      if None then random unitaries are drawn
     Returns:
         circs_list: list of measurement circuits for all joint observable choices 
-        unitary_seq: list of lists of unitary matrices that rotates the measurement basis
+        inv_unitary_seq: list of lists of inverted unitary matrices that rotates the measurement basis
     """
 
     # 1. random list of unitaries based on setting scenario
-    if unitary_seq == None:
-        n = len(sett)
-        unitary_seq = [[su2() for mi in range(sett[i])] for i in range(n)]
-
+    if unitary_seq is None:
+        try:
+            n = len(sett)
+            unitary_seq = [[su2() for mi in range(sett[i])] for i in range(n)]
+        except TypeError:
+            logging.error(' sett should be a list of int')
+            return
     # 2. read scenario from sequence
-    elif sett == None:
-        sett = [len(s) for s in unitary_seq]
-        n = len(sett)
-
+    elif sett is None:
+        try: 
+            sett = [len(s) for s in unitary_seq]
+            n = len(sett)
+        except TypeError:
+            logging.error(' wrong type of unitary_seq')
+            return
     else:  # 3. check if sequence and scenario match each other
-        assert sett == [len(s) for s in unitary_seq]
+        assert sett == [len(s) for s in unitary_seq], ' sett and unitary_seq'
         n = len(sett)
 
     # at that point unitary_seq can be passed as a list of either unitary matrices or gates
@@ -114,12 +117,11 @@ def meas_circs(sett=None, unitary_seq=None):
                 circ.unitary(gate, [i])
         circ.measure(range(n), range(n))
         circs_list.append(circ)
-
-    # function will return unitary_seq as a list of unitary matrices
-    unitary_seq = [[np.linalg.inv(u.to_matrix()) if isinstance(
+    # function will return unitary_seq as a list of inverted unitary matrices
+    inv_unitary_seq = [[np.linalg.inv(u.to_matrix()) if isinstance(
         u, qiskit.circuit.Gate) else np.linalg.inv(u) for u in uu] for uu in unitary_seq]
 
-    return circs_list, unitary_seq
+    return circs_list, inv_unitary_seq
 
 
 def su2(psi=None, chi=None, phi=None) -> np.ndarray:
@@ -136,5 +138,5 @@ def su2(psi=None, chi=None, phi=None) -> np.ndarray:
         phi = asin(sqrt(xi))
 
     u = np.array([[cos(phi)*exp(1j*psi), sin(phi)*exp(1j*chi)],
-                  [-sin(phi)*exp(-1j*chi), cos(phi)*exp(-1j*psi)]])
+                [-sin(phi)*exp(-1j*chi), cos(phi)*exp(-1j*psi)]])
     return u
