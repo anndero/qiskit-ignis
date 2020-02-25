@@ -1,142 +1,105 @@
-""" circuits for Bell Nonlocality testing """
+""" Class of Circuits for Bell Nonlocality testing """
 
 import qiskit
 import numpy as np
 import itertools as it
-from math import sqrt, pi, cos, sin, asin, log
-from cmath import exp
-import logging
+
+class BLocCircuits():
+    """ Class of Circuits for Bell Nonlocality testing."""
+    
+    def __init__(self, pre_meas_gates):
+        """ Constructor.
+        Args:
+            pre_meas_gates (list[list[Gate or Operator or unitary matrix]]): 
+                lists of grouped unitary gates preceding the measurements.
+                
+        Additional Information:
+        -----------------------
+        Structure of pre_meas_gates should reflect the settings scenario 
+        with sublists of available 1-qubit gates for a respective subsystem.
+        For example:
+        pre_meas_gates = [[XGate,YGate,ZGate],[RXGate(pi/3),RYGate(pi/6)]]
+        indicates 2 subsystems with 3 and 2 options respectively.               
+        """  
+        self._gates = None
+        self._circs = None
+        self.pre_meas_gates = pre_meas_gates
+            
+    @property
+    def pre_meas_gates(self):
+        """ Return the lists of the established unitary gates preceding the 
+            measurements.  
+        Returns:
+            list[list[UnitaryGate]]: unitary gates."""
+        return self._gates
+        
+    @pre_meas_gates.setter
+    def pre_meas_gates(self, gates):
+        self._gates = [[qiskit.extensions.UnitaryGate(i) 
+                        for i in j] for j in gates]
+        self._circs = None # clear previously constructed circs
+        
+    @property
+    def meas_circs(self):
+        """ Return the list of the circuits for Bell nonlocality testing.
+            The order of the circuits is due to increasing input indices.
+        Returns:
+            list[QuantumCircuit]: measurement circuits."""
+        return self._circs
+        
+    @property
+    def matrices(self):
+        """ Return unitary matrices of pre_meas_gates.
+        Returns:
+            list[list[np.array]]: unitary matrices."""
+        return [[i.to_matrix() for i in j] for j in self.pre_meas_gates] 
+
+    @property
+    def sett(self) -> list:
+        """ Return the number of possible measurement settings per subsystem."""
+        return [len(i) for i in self.pre_meas_gates] 
+        
+    @property
+    def n(self) -> int:
+        """ Return the number of subsystems (i.e. number of qubits)."""
+        return len(self.pre_meas_gates) 
+
+    @classmethod
+    def random(cls, sett):
+        """ Construct BLocCircuits object with random unitary gates preceding 
+            the measurements.
+        Args:
+            sett (list[int]): possible measurement settings per subsystem.
+                len(sett) is the number of subsystems.
+        Returns:
+            BLocCircuits: instance with random pre measurement gates.
+        Raises:
+            QiskitError: if invalid sett argument.
+        """
+        if any( not isinstance(i, int) or i <= 0 for i in sett ):
+            raise qiskit.QiskitError('sett should be list of int > 0.')
+        
+        pre_meas_gates = [[qiskit.extensions.UnitaryGate(
+            qiskit.quantum_info.random.utils.random_unitary(2))
+                           for s in range(sett[i])] for i in range(len(sett))]
+        return BLocCircuits(pre_meas_gates)
+
+    def construct_meas_circs(self):
+        """ Construct the circuits for Bell nonlocality testing
+            based on the established pre measurement gates.
+            The order of the circuits is due to increasing input indices.
+        Returns:
+            list[QuantumCircuit]: list of circuits. """
+        meas_circs = []
+        for inputs in it.product(*[range(s) for s in self.sett]):
+            circ = qiskit.QuantumCircuit(self.n,self.n, name='{}'.format(inputs))
+            circ.barrier()
+            for i in range(self.n):
+                circ.append(self.pre_meas_gates[i][inputs[i]], [i])
+            circ.measure(range(self.n), range(self.n))
+            meas_circs.append(circ)
+        self._circs = meas_circs
 
 
-def state_circ(state = None, n = None):
-    """ part of a circuit corresponding to the initial quantum state 
-    Args: 
-        state: i.e. QuantumCircuit, statevector or state name (e.g. 'ghz','w','dicke2')
-               if None then random pure state is prepared
-        n(int): number of qubits 
-    Returns:
-        state: QuantumCircuit object preparing the state 
-        statevector: np.array of state' amplitudes 
-    """
-
-    # 1. state passed as a circuit
-    if isinstance(state, qiskit.QuantumCircuit):
-        job = qiskit.execute(state, qiskit.BasicAer.get_backend('statevector_simulator'))
-        statevector = job.result().get_statevector()
-
-    # 2. random state
-    elif state is None and n is not None:
-        state = qiskit.QuantumCircuit(n, n, name="random_state")
-        state.initialize(qiskit.quantum_info.random.utils.random_state(2**n), range(n))
-        job = qiskit.execute(state, qiskit.BasicAer.get_backend('statevector_simulator'))
-        statevector = job.result().get_statevector()
-
-    # 3. state passed by name e.g. ghz, w, dicke3
-    elif isinstance(state, str) and n is not None:
-        if state.lower() == 'ghz':
-            statevector = np.array(([1/sqrt(2)]+[0]*(2**n-2))+[1/sqrt(2)])
-            state = qiskit.QuantumCircuit(n, n, name='ghz')
-            state.h(0)
-            state.cx(range(n-1), range(1, n))
-        elif state.lower()[0:5] == 'dicke':
-            try: excitations = int(state[5:])
-            except ValueError: return
-            statevector = [1.0 if bin(i).count('1') == excitations else 0.0 for i in range(2**n)]
-            statevector = np.array(statevector)/sqrt(sum(statevector))
-            state = qiskit.QuantumCircuit(n, n, name='dicke{}'.format(excitations))
-            state.initialize(statevector, range(n))
-        elif state.lower() == 'w':
-            statevector = [1.0/sqrt(n) if bin(i).count('1') == 1 else 0.0 for i in range(2**n)]
-            state = qiskit.QuantumCircuit(n, n, name='w')
-            state.initialize(statevector, range(n))
-        else:
-            logging.error(' name of state not recognized')
-            return
-
-    # 4. state passed as statevector
-    elif hasattr(state, '__iter__'):
-        if n is None:
-            n = int(log(len(state), 2))
-        if np.array(state).shape == (2**n,) and np.isclose(sum(np.conj(i)*i for i in state), 1.0):
-            statevector = state.copy()
-            state = qiskit.QuantumCircuit(n, n, name="state_circ")
-            state.initialize(statevector, range(n))
-            # because the fidelity of initialized state can be poor replace with actual statevector
-            job = qiskit.execute(state, qiskit.BasicAer.get_backend('statevector_simulator'))
-            statevector = job.result().get_statevector()
-        else:
-            logging.error(' statevector is not properly normalized')
-            return
-    else:
-        logging.error(' state not recognized')
-        return
-    state.barrier()
-    return state, statevector
 
 
-def meas_circs(sett = None, unitary_seq = None):
-    """ list of circuits corresponding to measurements
-    Args: 
-        sett: measurement settings scenario i.e. number of choices of observables for each qubit
-        unitary_seq: list of lists of unitary matrices/gates that rotates the z measurement basis
-                     if None then random unitaries are drawn
-    Returns:
-        circs_list: list of measurement circuits for all joint observable choices 
-        inv_unitary_seq: list of lists of inverted unitary matrices that rotates the measurement basis
-    """
-
-    # 1. random list of unitaries based on setting scenario
-    if unitary_seq is None:
-        try:
-            n = len(sett)
-            unitary_seq = [[su2() for mi in range(sett[i])] for i in range(n)]
-        except TypeError:
-            logging.error(' sett should be a list of int')
-            return
-    # 2. read scenario from sequence
-    elif sett is None:
-        try: 
-            sett = [len(s) for s in unitary_seq]
-            n = len(sett)
-        except TypeError:
-            logging.error(' wrong type of unitary_seq')
-            return
-    else:  # 3. check if sequence and scenario match each other
-        assert sett == [len(s) for s in unitary_seq], ' sett and unitary_seq'
-        n = len(sett)
-
-    # at that point unitary_seq can be passed as a list of either unitary matrices or gates
-    circs_list = []
-    for mi in it.product(*[range(s) for s in sett]):
-        circ = qiskit.QuantumCircuit(n, n)
-        for i in range(n):
-            gate = unitary_seq[i][mi[i]]
-            if isinstance(gate, qiskit.circuit.Gate):
-                circ.append(gate, [i])
-            else:
-                circ.unitary(gate, [i])
-        circ.measure(range(n), range(n))
-        circs_list.append(circ)
-    # function will return unitary_seq as a list of inverted unitary matrices
-    inv_unitary_seq = [[np.linalg.inv(u.to_matrix()) if isinstance(
-        u, qiskit.circuit.Gate) else np.linalg.inv(u) for u in uu] for uu in unitary_seq]
-
-    return circs_list, inv_unitary_seq
-
-
-def su2(psi=None, chi=None, phi=None) -> np.ndarray:
-    """ returns a special unitary matrix SU(2) based on Euler angle parametrization 
-        from K.Zyczkowski and M.Kus, J. Phys. A: Math. Gen. 27 (1994) 
-        if angles are not provided then returns random SU(2) matrix distributed with Haar measure """
-
-    if psi == None:
-        [psi] = np.random.uniform(0, 2*pi, 1)
-    if chi == None:
-        [chi] = np.random.uniform(0, 2*pi, 1)
-    if phi == None:
-        [xi] = np.random.uniform(0, 1.0, 1)
-        phi = asin(sqrt(xi))
-
-    u = np.array([[cos(phi)*exp(1j*psi), sin(phi)*exp(1j*chi)],
-                [-sin(phi)*exp(-1j*chi), cos(phi)*exp(-1j*psi)]])
-    return u
