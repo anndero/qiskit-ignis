@@ -16,6 +16,7 @@
 
 import qiskit
 import itertools
+import numpy as np
 from typing import List, Sequence, Union
 from nptyping import Array
 
