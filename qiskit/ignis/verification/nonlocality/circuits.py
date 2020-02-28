@@ -16,7 +16,7 @@
 
 import qiskit
 import itertools
-from typing import List, Optional, Sequence, Union
+from typing import List, Sequence, Union
 from nptyping import Array
 
 NumType = Union[int, float, complex]
