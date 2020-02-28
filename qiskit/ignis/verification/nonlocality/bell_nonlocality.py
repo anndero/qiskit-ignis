@@ -39,8 +39,6 @@ except NameError:
 
 from qiskit.ignis.verification.nonlocality.bell_scenario import BellScenario
     
-#import scipy.optimize as scop
-#import time, datetime, sys, os, pickle, logging, string, random, tqdm, math, cmath, types
 from typing import Optional, Sequence, Union, List, Dict
 NumType = Union[int, float, complex]
 StateType = Union[qiskit.quantum_info.states.DensityMatrix, 
@@ -95,13 +93,7 @@ class BLocFitter(BellScenario):
         if pre_meas_gates is not None:
             self.pre_meas_gates = pre_meas_gates
 
-        self._LP = None        
-        self._nonlocality = None       
-        
-        
-    @property
-    def nonlocality(self):
-        return self._nonlocality
+        self._LP = None             
     
     
     # qiskit results --> measured quantum correlations
