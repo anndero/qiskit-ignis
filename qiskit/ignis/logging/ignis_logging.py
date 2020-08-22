@@ -5,6 +5,8 @@
 # This source code is licensed under the Apache License, Version 2.0 found in
 # the LICENSE.txt file in the root directory of this source tree.
 
+# pylint: disable=invalid-name
+
 """
 Ignis Logging
 """
@@ -62,14 +64,15 @@ class IgnisLogger(logging.getLoggerClass()):
         self.addHandler(sh)
         self._conf_file_exists = conf_file_exists
 
-    def log_to_file(self, **kargs: str):
+    def log_to_file(self, **kwargs):
         """
         Log key:value pairs to a log file.
 
         Note: Logger name in the log file is fixed (ignis_logging)
 
         Args:
-            kwargs: key/value pairs to be logged, e.g t1=0.02, qubits=[1,2,4]
+            kwargs: key/value pairs to be logged, e.g t1=0.02,
+                qubits=[1,2,4]
         """
         if not self._file_logging_enabled:
             if not self._warning_omitted:  # Omitting this warning only once
@@ -88,10 +91,11 @@ class IgnisLogger(logging.getLoggerClass()):
 
         assert(self._file_handler is not None), "file_handler is not set"
 
+        # Removing the stream handler to avoid printing to console here
         Logger.removeHandler(self, self._stream_handler)
         Logger.addHandler(self, self._file_handler)
         logstr = ""
-        for k, v in kargs.items():
+        for k, v in kwargs.items():
             logstr += "'{}':'{}' ".format(k, v)
 
         Logger.log(self, 100, logstr)
@@ -149,22 +153,25 @@ class IgnisLogging:
     _config_file_exists = False
 
     # Making the class a Singleton
-    def __new__(cls):
+    def __new__(cls, log_config_path=None):
         if IgnisLogging._instance is None:
             IgnisLogging._instance = object.__new__(cls)
-            IgnisLogging._initialize()
+            IgnisLogging._initialize(log_config_path)
 
         return IgnisLogging._instance
 
     @staticmethod
-    def _load_config_file():
+    def _load_config_file(log_config_path=None):
         """
         Load and parse the config file
         Returns:
-            A dictionary containing all the settings
+            dict: A dictionary containing all the settings
         """
-        config_file_path = os.path.join(os.path.expanduser('~'),
-                                        ".qiskit", "logging.yaml")
+        if not log_config_path:
+            config_file_path = os.path.join(os.path.expanduser('~'),
+                                            ".qiskit", "logging.yaml")
+        else:
+            config_file_path = log_config_path
         config = dict()
         if os.path.exists(config_file_path):
             with open(config_file_path, "r") as log_file:
@@ -180,13 +187,13 @@ class IgnisLogging:
         return config
 
     @staticmethod
-    def _initialize():
+    def _initialize(log_config_path):
         """
         Initialize the logging facility for Ignis
         """
         logging.setLoggerClass(IgnisLogger)
 
-        log_config = IgnisLogging._load_config_file()
+        log_config = IgnisLogging._load_config_file(log_config_path)
         # Reading the config file content
         IgnisLogging._file_logging_enabled = \
             log_config.get('file_logging') == "true"
@@ -199,22 +206,35 @@ class IgnisLogging:
         IgnisLogging._max_rotations = int(max_rotations) if \
             max_rotations is not None and max_rotations.isdigit() else 0
 
-    def get_logger(self, __name__: str) -> IgnisLogger:
+    @staticmethod
+    def _reset_to_defaults(name):
+        if IgnisLogging._instance is not None:
+            IgnisLogging._instance = None
+            IgnisLogging._file_logging_enabled = False
+            IgnisLogging._log_file = None
+            IgnisLogging._config_file_exists = False
+            logger = logging.getLogger(name)
+            if isinstance(logger, IgnisLogger):
+                logger._file_handler = None
+                logger._file_logging_enabled = False
+                logger.removeHandler(logger._stream_handler)
+
+    def get_logger(self, name: str) -> IgnisLogger:
         """
         Return an IgnisLogger object
 
         To be used in by the code which needs logging.
 
         Args:
-            __name__: Name of the module being logged
+            name: Name of the module being logged
 
         Returns:
             An IgnisLogger object
         """
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger(name)
         assert(isinstance(logger, IgnisLogger)), \
             "IgnisLogger class was not registered"
-        self.configure_logger(logger)
+        self._configure_logger(logger)
 
         return logger
 
@@ -224,7 +244,7 @@ class IgnisLogging:
         demand the first time IgnisLoggers needs to write to a file
 
         Returns:
-            The configured RotatingFileHandler
+            RotatingFileHandler: The configured RotatingFileHandler object
         """
         # Configuring the file handling aspect
         fh = logging.handlers.RotatingFileHandler(
@@ -244,7 +264,7 @@ class IgnisLogging:
         Configure the stream handler of the logger
 
         Args:
-            logger: the logger to be configured
+            logger (Logger): the logger to be configured
         """
         # Configuring the stream handler
         sh = logging.StreamHandler()
@@ -292,8 +312,7 @@ class IgnisLogReader:
         file rotation). File names are sorted by modification time.
 
         Returns:
-            list of all log file names
-
+            list: list of all log file names
         """
 
         file_name = IgnisLogging().get_log_file()
@@ -339,7 +358,7 @@ class IgnisLogReader:
             will assume "%Y/%m/%d %H:%M:%S"
 
         Returns:
-            A list containing the retrieved rows of key pair values
+            list: A list containing the retrieved rows of key pair values
         """
 
         if log_files is not None:
@@ -377,11 +396,11 @@ class IgnisLogReader:
         Retrieve key value pairs matching the given keys
 
         Params:
-            key_values: list of key value pairs
-            keys: list of keys to retrieve key value pair of
+            key_values (list): list of key value pairs
+            keys (list): list of keys to retrieve key value pair of
 
         Returns:
-            A list of key value pairs according to keys
+            list: A list of key value pairs according to keys
         """
 
         result = list()
@@ -396,7 +415,6 @@ class IgnisLogReader:
     def _filter_by_datetime(self, row_datetime, from_dt,
                             from_dt_fmt, to_dt,
                             to_dt_fmt):
-
         """
         Determine whether the given datetime should be filtered
 
@@ -408,7 +426,10 @@ class IgnisLogReader:
             to_dt_fmt: format of the ending date/time
 
         Returns:
-            True if the row should be filtered out
+            bool: True if the row should be filtered out
+
+        Raises:
+            ValueError: if invalid date time fields are passed in
         """
         if from_dt is not None and not isinstance(from_dt, datetime):
             try:

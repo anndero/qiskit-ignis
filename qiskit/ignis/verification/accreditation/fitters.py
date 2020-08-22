@@ -10,6 +10,8 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
+# pylint: disable=invalid-name
+
 
 """
 Class for accreditation protocol
@@ -27,14 +29,14 @@ from .qotp import QOTPCorrectCounts
 
 
 class AccreditationFitter:
-    '''
+    """
     Class for fitters for accreditation
 
     Implementation follows the methods from
     Samuele Ferracin, Theodoros Kapourniotis and Animesh Datta
     New Journal of Physics, Volume 21, November 2019
     https://iopscience.iop.org/article/10.1088/1367-2630/ab4fd6
-    '''
+    """
 
     bound = 1
     confidence = 1
